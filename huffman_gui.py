@@ -1,124 +1,138 @@
-import heapq
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from collections import Counter
+import huffman_code
 
-# Node Class for Building Huffman Tree Nodes
-class Node:
-    def __init__(self, freq, char=None, left=None, right=None):
-        self.freq = freq
-        self.char = char
-        self.left = left
-        self.right = right
-    
-    def __lt__(self, other):
-        return self.freq < other.freq
-
-# Function to build Huffman Tree
-def build_huffman_tree(frequencies):
-    heap = [Node(freq, char) for char, freq in frequencies.items()]
-    heapq.heapify(heap)
-    
-    while len(heap) > 1:
-        left = heapq.heappop(heap)
-        right = heapq.heappop(heap)
-        merged = Node(left.freq + right.freq, left=left, right=right)
-        heapq.heappush(heap, merged)
-    
-    return heap[0]
-
-# Recursive function to generate Huffman Code
-def generate_huffman_codes(node, prefix='', codes={}):
-    if node:
-        if node.char is not None:
-            codes[node.char] = prefix
-        generate_huffman_codes(node.left, prefix + '0', codes)
-        generate_huffman_codes(node.right, prefix + '1', codes)
-    return codes
-
-# Function to encode text
 def encode_text(text, huffman_codes):
-    return ''.join(huffman_codes[char] for char in text)
+    try:
+        return ''.join(huffman_codes[char] for char in text)
+    
+    # In case one of the characters trigger the encoding and creates an issue to encode the .txt file
+    except KeyError:
+        messagebox.showerror("Encoding Error", "There was an error encoding the text! Please ensure all characters are valid.")
+        return ""
 
-# Function to save compressed file
 def save_compressed_file(encoded_text, filename):
-    byte_array = bytearray()
-    for i in range(0, len(encoded_text), 8):
-        byte = encoded_text[i:i+8]
-        byte_array.append(int(byte.ljust(8, '0'), 2))
-    
-    with open(filename, 'wb') as file:
-        file.write(byte_array)
+    try:
+        byte_array = bytearray()
+        for i in range(0, len(encoded_text), 8):
+            byte = encoded_text[i:i+8]
+            byte_array.append(int(byte.ljust(8, '0'), 2))
+        
+        with open(filename, 'wb') as file:
+            file.write(byte_array)
 
-# Function to decompress file
+    # In case there was an issue saving the compressed file
+    except Exception as e:
+        messagebox.showerror("File Error", f"There was an error saving this compressed file! The error: {e}")
+
 def decompress_file(compressed_file, huffman_codes):
-    with open(compressed_file, 'rb') as file:
-        binary_data = ''.join(f'{byte:08b}' for byte in file.read())
+    try:
+        with open(compressed_file, 'rb') as file:
+            binary_data = ''.join(f'{byte:08b}' for byte in file.read())
+        
+        reverse_codes = {v: k for k, v in huffman_codes.items()}
+        decoded_text, temp_code = '', ''
+        
+        for bit in binary_data:
+            temp_code += bit
+            if temp_code in reverse_codes:
+                decoded_text += reverse_codes[temp_code]
+                temp_code = ''
+        
+        return decoded_text
     
-    reverse_codes = {v: k for k, v in huffman_codes.items()}
-    decoded_text = ''
-    temp_code = ''
-    
-    for bit in binary_data:
-        temp_code += bit
-        if temp_code in reverse_codes:
-            decoded_text += reverse_codes[temp_code]
-            temp_code = ''
-    
-    return decoded_text
+    # In case the compressed file is not found
+    except FileNotFoundError:
+        messagebox.showerror("File Error", "Compressed file not found. Please compress a file first.")
 
-# Function for Huffman compression
+        # In case there is an issue while decompressing the compressed file
+    except Exception as e:
+        messagebox.showerror("Decompression Error", f"There was an error decompressing the .txt file! The error: {e}")
+    return ""
+
 def huffman_compress(input_file, output_file):
-    with open(input_file, 'r') as file:
-        text = file.read()
-    
-    frequencies = Counter(text)
-    huffman_tree = build_huffman_tree(frequencies)
-    huffman_codes = generate_huffman_codes(huffman_tree)
-    encoded_text = encode_text(text, huffman_codes)
-    save_compressed_file(encoded_text, output_file)
-    
-    original_size = os.path.getsize(input_file)
-    compressed_size = os.path.getsize(output_file)
-    compression_ratio = (1 - (compressed_size / original_size)) * 100
-    
-    return huffman_codes, original_size, compressed_size, compression_ratio
+    try:
+        with open(input_file, 'r') as file:
+            text = file.read()
 
-# Allows the user to select a .txt file only
+        # To make sure the .txt file you choose actually has something in it    
+        if not text:
+            messagebox.showerror("File Error", "This .txt file is empty! Please make sure that there is something in the file!")
+            return None, 0, 0, 0
+
+        frequencies = Counter(text)
+        huffman_tree = huffman_code.build_huffman_tree(frequencies)
+        huffman_codes = huffman_code.generate_huffman_codes(huffman_tree)
+        encoded_text = encode_text(text, huffman_codes)
+        if not encoded_text:
+            return None, 0, 0, 0
+        
+        save_compressed_file(encoded_text, output_file)
+        
+        original_size = os.path.getsize(input_file)
+        compressed_size = os.path.getsize(output_file)
+        compression_ratio = (1 - (compressed_size / original_size)) * 100
+        
+        return huffman_codes, original_size, compressed_size, compression_ratio
+    
+    # In case you try to select a "ghost" file
+    # A file that should be there, but is not
+    except FileNotFoundError:
+        messagebox.showerror("File Error", "This .txt file was not found! Please make sure the file is there!")
+
+        # In case an error occurs while compressing the .txt file
+    except Exception as e:
+        messagebox.showerror("Compression Error", f"Invalid file! Error during compression: {e}")
+    return None, 0, 0, 0
+
 def select_file():
     filename = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt")])
     if filename:
+        global selected_file
+        selected_file = filename
         compress_file(filename)
+    else:
 
-# Function to compress the selected file and update the GUI
+        # When you don't select a .txt file and press Cancel on the File Explorer
+        messagebox.showerror("File Selection Error", "You did not select a file! Please select a .txt file.")
+
 def compress_file(input_file):
     output_file = "compressed.bin"
     global huffman_codes
     huffman_codes, original_size, compressed_size, compression_ratio = huffman_compress(input_file, output_file)
     
-    # Display Huffman Codes
-    codes_display.delete(1.0, tk.END)
-    for char, code in huffman_codes.items():
-        codes_display.insert(tk.END, f"'{char}': {code}\n")
-    
-    # Update compression details
-    compression_label.config(
-        text=f"Original: {original_size} bytes | "
-             f"Compressed: {compressed_size} bytes | "
-             f"Ratio: {compression_ratio:.2f}%",
-        fg="#0066cc"
-    )
-    
-    messagebox.showinfo("Compression Complete", "Compressed file saved as 'compressed.bin'.")
+    if huffman_codes:
+        codes_display.delete(1.0, tk.END)
+        for char, code in huffman_codes.items():
+            codes_display.insert(tk.END, f"'{char}': {code}\n")
+        
+        compression_label.config(
+            text=f"Original: {original_size} bytes | Compressed: {compressed_size} bytes | Ratio: {compression_ratio:.2f}%",
+            fg="#0066cc"
+        )
 
-# Function for decompressing the file and updating the GUI
+        # Successfully compressed the .txt file
+        messagebox.showinfo("Compression Complete", "Compressed file saved as 'compressed.bin'.")
+
 def decompress_file_interface():
-    input_file = "compressed.bin"
-    global huffman_codes
-    decoded_text = decompress_file(input_file, huffman_codes)
+    global huffman_codes, selected_file
+
+    # In case the compressed file you selected does not have data to be decompressed
+    if not huffman_codes:
+        messagebox.showerror("Decompression Error", "No compression data found. Compress a file first.")
+        return
+    
+    # In case you attempt to decompress, but there is no .txt file selected
+    if not selected_file:
+        messagebox.showerror("File Error", "No .txt file was selected! Please select a .txt file before decompressing.")
+        return
+    decoded_text = decompress_file("compressed.bin", huffman_codes)
     decoded_text_display.delete(1.0, tk.END)
     decoded_text_display.insert(tk.END, decoded_text)
+
+    # If the encoded text was successfully decoded
     messagebox.showinfo("Decompression Complete", "Decoding successful! Original text matches.")
 
 # GUI
@@ -130,40 +144,29 @@ root.geometry("600x600")
 main_frame = tk.Frame(root, bg="#f5f5f5", padx=20, pady=20)
 main_frame.pack(expand=True)
 
-label_style = {
-    "bg": "#f5f5f5",
-    "fg": "#333333",
-    "font": ("Arial", 14, "bold")
-}
+# Huffman Coding Compression Tool title
+tk.Label(main_frame, text="📦 Huffman Coding Compression Tool", font=("Arial", 14, "bold"), bg="#f5f5f5", fg="#333").pack(pady=5)
 
-text_style = {
-    "bg": "white",
-    "fg": "#333333",
-    "font": ("Arial", 12)
-}
-
-tk.Label(main_frame, text="📦 Huffman Coding Compression Tool", **label_style).pack(pady=5)
-compress_button = tk.Button(main_frame, text="📂 Select Text File", command=select_file, width=20, height=2, relief="solid", bg="#cce5ff", fg="#333333", font=("Arial", 12, "bold"))
+# Compression button
+compress_button = tk.Button(main_frame, text="📂 Select Text File", command=select_file, width=20, height=2, relief="solid", bg="#cce5ff", fg="#333", font=("Arial", 12, "bold"))
 compress_button.pack(padx=5, pady=5)
 
-compression_frame = tk.Frame(main_frame, bg="#f5f5f5")
-compression_frame.pack(pady=5)
+# Compression details
+compression_label = tk.Label(main_frame, text="Compression details will appear here.", fg="#0066cc", bg="#f5f5f5", font=("Arial", 12, "bold"))
+compression_label.pack(pady=5)
 
-compression_label = tk.Label(compression_frame, text="Compression details will appear here.", fg="#0066cc", bg="#f5f5f5", font=("Arial", 12, "bold"))
-compression_label.pack(side="left", padx=5)
-
-# Displays the Huffman Codes of the compressed file
-tk.Label(main_frame, text="📜 Huffman Codes:", **label_style).pack(pady=5)
-codes_display = scrolledtext.ScrolledText(main_frame, width=60, height=12, **text_style)
+# Huffman Codes: 
+tk.Label(main_frame, text="📜 Huffman Codes:", font=("Arial", 14, "bold"), bg="#f5f5f5", fg="#333").pack(pady=5)
+codes_display = scrolledtext.ScrolledText(main_frame, width=60, height=12, font=("Arial", 12))
 codes_display.pack(pady=5)
 
-# Decompress file button
-decompress_button = tk.Button(main_frame, text="🔄 Decompress File", command=decompress_file_interface, width=20, height=2, relief="solid", bg="#cce5ff", fg="#333333", font=("Arial", 12, "bold"))
+# Decompression button
+decompress_button = tk.Button(main_frame, text="🔄 Decompress File", command=decompress_file_interface, width=20, height=2, relief="solid", bg="#cce5ff", fg="#333", font=("Arial", 12, "bold"))
 decompress_button.pack(padx=5, pady=5)
 
-# Displays the decoded text of the compressed file once decompressed
-tk.Label(main_frame, text="📝 Decoded Text:", **label_style).pack(pady=5)
-decoded_text_display = scrolledtext.ScrolledText(main_frame, width=60, height=12, **text_style)
+# Decoded Text: 
+tk.Label(main_frame, text="📝 Decoded Text:", font=("Arial", 14, "bold"), bg="#f5f5f5", fg="#333").pack(pady=5)
+decoded_text_display = scrolledtext.ScrolledText(main_frame, width=60, height=12, font=("Arial", 12))
 decoded_text_display.pack(pady=5)
 
 root.mainloop()
